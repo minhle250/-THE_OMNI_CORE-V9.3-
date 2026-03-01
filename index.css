@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --hermes-orange: #D95319;
+  --parchment-bg: #F4F0EB;
+  --craie-white: #FBF9F6;
+  --saddle-gold: #A67C52;
+  --espresso-text: #2C221E;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--parchment-bg);
+  color: var(--espresso-text);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Hiệu ứng Saddle-Stitch đặc trưng cho Hermès UI */
+.saddle-stitch-border {
+  border: 1px dashed rgba(166, 124, 82, 0.4);
+}
+
+/* Scrollbar tối giản cho giới Elite */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(166, 124, 82, 0.2);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hermes-orange);
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(166, 124, 82, 0.2) transparent;
+}

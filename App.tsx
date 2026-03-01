@@ -1,11 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, Component, type ErrorInfo, type ReactNode } from 'react';
 import { 
-  Compass, LayoutGrid, BrainCircuit, Activity, 
-  Zap, ChevronRight, ChevronDown, CheckCircle, Circle,
+  BrainCircuit, Zap, ChevronRight, CloudSun, Send,
   Clock, Target, Play, HardDrive, ListTodo, Pause, RotateCcw,
-  GraduationCap, Send, Globe, Cpu, CloudSun,
-  Search, Volume2, Sparkles, Loader2, Calendar, Trash2, AlertTriangle,
-  Mail, FileText, Table2, StickyNote, ExternalLink
+  GraduationCap, Globe, Search, Volume2, Sparkles, Loader2, 
+  Calendar, Trash2, AlertTriangle, Mail, FileText, Table2, 
+  StickyNote, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
@@ -595,6 +594,17 @@ const LogicPruner = () => <ErrorBoundary moduleName="LOGIC_PRUNER"><LogicPrunerC
 // [CORE: App]
 // ============================================================================
 
+// [SURGICAL ADDITION] - Bypassing PhET's X-Frame-Options by curating the HTML5 raw URLs
+const PHET_SIMS = [
+  { name: 'Mạch Điện (DC)', url: 'https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html' },
+  { name: 'Động Học & Lực', url: 'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_all.html' },
+  { name: 'Sóng & Giao Thoa', url: 'https://phet.colorado.edu/sims/html/wave-interference/latest/wave-interference_all.html' },
+  { name: 'Định Luật Faraday', url: 'https://phet.colorado.edu/sims/html/faradays-law/latest/faradays-law_all.html' },
+  { name: 'Bảo Toàn Năng Lượng', url: 'https://phet.colorado.edu/sims/html/energy-skate-park/latest/energy-skate-park_all.html' },
+  { name: 'Trạng Thái Vật Chất', url: 'https://phet.colorado.edu/sims/html/states-of-matter-basics/latest/states-of-matter-basics_all.html' },
+  { name: 'Quang Học', url: 'https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_all.html' }
+];
+
 // DATA: THE CAMPAIGN TRACKER (PATTERN EXTRACTED FROM PDFs)
 const CAMPAIGN_DATA = {
   'HSGTP': {
@@ -668,6 +678,19 @@ export default function App() {
   const [pomodoroTime, setPomodoroTime] = useState(25 * 60);
   const [isTimerActive, setIsTimerActive] = useState(false);
   
+  // [SURGICAL ADDITION] - Khôi phục state tasks bị mất để ngăn chặn Meltdown ở module Bayesian
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [architectLoading, setArchitectLoading] = useState(false);
+
+  const architectTasks = async () => {
+    if (notes.length === 0) return;
+    setArchitectLoading(true);
+    try {
+      const res = await invokeGemini(`Biến mục tiêu chiến lược sau thành một danh sách 5 nhiệm vụ cụ thể: "${notes[0].content}"`, "You are a Task Architect. Respond with 5 short bullet points.");
+      setTasks(res.split('\n').filter(t => t.trim()).map(t => ({ id: crypto.randomUUID(), title: t, done: false })));
+    } catch (e) { console.error(e); } finally { setArchitectLoading(false); }
+  };
+
   // Hub States
   const [isEmbedExpanded, setIsEmbedExpanded] = useState(true);
   const [activeIframe, setActiveIframe] = useState('https://www.desmos.com/calculator');
@@ -688,7 +711,8 @@ export default function App() {
 
   return (
     <ErrorBoundary moduleName="ROOT_SYSTEM">
-      <SentinelContext.Provider value={{ fatigueLevel, activeMode, setActiveMode, isProcessing, setIsProcessing, notes, addNote, deleteNote, isLocked, setIsLocked, tasks: [] }}>
+      {/* Cập nhật Provider: Chèn lại tasks và architect để hệ thống vận hành trơn tru */}
+      <SentinelContext.Provider value={{ fatigueLevel, activeMode, setActiveMode, isProcessing, setIsProcessing, notes, addNote, deleteNote, isLocked, setIsLocked, tasks, setTasks, architectTasks, architectLoading }}>
         <LayoutGroup>
           <AnimatePresence mode="wait">
             {isLocked ? (
@@ -793,7 +817,10 @@ export default function App() {
                                             {/* Native Embeds */}
                                             <button onClick={() => setActiveIframe('https://www.desmos.com/calculator')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('desmos') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>Desmos 2D</button>
                                             <button onClick={() => setActiveIframe('https://www.geogebra.org/3d?embed')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('geogebra') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>GeoGebra 3D</button>
-                                            <button onClick={() => setActiveIframe('https://phet.colorado.edu/en/simulations/filter?subjects=physics&type=html')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('phet.colorado.edu/en') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>PhET Hub</button>
+                                            
+                                            {/* Sửa lại link gọi thẳng vào Thí nghiệm đầu tiên của PhET thay vì Filter Page bị cấm */}
+                                            <button onClick={() => setActiveIframe(PHET_SIMS[0].url)} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('phet.colorado.edu') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>PhET Hub</button>
+                                            
                                             <button onClick={() => setActiveIframe('https://open.spotify.com/embed/playlist/37i9dQZF1DWZeKCadgRdKQ?utm_source=generator&theme=0')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('spotify') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>Spotify</button>
                                             
                                             <div className="w-px h-4 bg-stone-700 mx-1 shrink-0"></div>
@@ -809,8 +836,19 @@ export default function App() {
                                     </div>
                                     <AnimatePresence>
                                       {isEmbedExpanded && (
-                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: '100%' }} exit={{ opacity: 0, height: 0 }} className="flex-1 bg-[#FBF9F6]">
-                                          <iframe src={activeIframe} className="w-full h-full border-none" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
+                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: '100%' }} exit={{ opacity: 0, height: 0 }} className="flex-1 bg-[#FBF9F6] flex flex-col">
+                                          
+                                          {/* [SURGICAL ADDITION] - PhET Mini-Library Bar: Chỉ hiện khi m kích hoạt PhET Hub */}
+                                          {activeIframe.includes('phet.colorado.edu') && (
+                                            <div className="bg-[#161412] border-b border-stone-800 flex gap-2 overflow-x-auto px-4 py-2 custom-scrollbar shrink-0 items-center">
+                                              <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-widest mr-2 shrink-0 flex items-center gap-1"><Target size={12}/> PhET Library</span>
+                                              {PHET_SIMS.map(sim => (
+                                                <button key={sim.name} onClick={() => setActiveIframe(sim.url)} className={cn("text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-md transition-all whitespace-nowrap", activeIframe === sim.url ? "bg-emerald-600 text-white shadow-md" : "bg-white/5 text-stone-400 border border-stone-800 hover:bg-white/10 hover:text-stone-200")}>{sim.name}</button>
+                                              ))}
+                                            </div>
+                                          )}
+
+                                          <iframe src={activeIframe} className="w-full h-full border-none flex-1" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
                                         </motion.div>
                                       )}
                                     </AnimatePresence>

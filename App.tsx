@@ -11,14 +11,11 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // ============================================================================
-// [FOLDER: /core/utils]
+// [CORE: UTILS & SECURITY]
 // ============================================================================
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ============================================================================
-// [FOLDER: /core/security] - QUARANTINE SHIELDS
-// ============================================================================
 interface ErrorBoundaryProps { children: ReactNode; moduleName: string; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -37,7 +34,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 // ============================================================================
-// [FOLDER: /core/context] 
+// [CORE: CONTEXT & TOKENS] 
 // ============================================================================
 const SentinelContext = createContext<any>(undefined);
 const useSentinel = () => useContext(SentinelContext);
@@ -45,14 +42,14 @@ const useSentinel = () => useContext(SentinelContext);
 const TOKENS = {
   bgObsidian: "bg-[#161412]",
   textHermesOrange: "#D95319",
-  borderSaddle: "border-2 border-dashed border-[#C5A059]/30",
-  shadowSoft: "shadow-[0_20px_50px_-12px_rgba(0,0,0,0.4),0_10px_20px_-5px_rgba(0,0,0,0.2)]",
+  borderSaddle: "border-2 border-dashed border-[#C5A059]/30"
 };
 
 // ============================================================================
-// [FOLDER: /core/api] - GEMINI SENSOR
+// [CORE: API & WAV COMPILER] - IMMUTABLE FORCE
 // ============================================================================
 const apiKey = ""; 
+
 const invokeGemini = async (prompt: string, systemInstruction: string): Promise<string> => {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
   let lastError;
@@ -70,6 +67,32 @@ const invokeGemini = async (prompt: string, systemInstruction: string): Promise<
   throw lastError;
 };
 
+// Lệnh Force: Trình biên dịch WAV hạt nhân. Không có cái này, trình duyệt câm lặng.
+const compileWav = (base64Pcm: string, sampleRate = 24000) => {
+  const binaryString = atob(base64Pcm);
+  const pcmData = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) pcmData[i] = binaryString.charCodeAt(i);
+
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const buffer = new ArrayBuffer(44 + pcmData.length);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, string: string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
+
+  writeString(0, 'RIFF'); view.setUint32(4, 36 + pcmData.length, true);
+  writeString(8, 'WAVE'); writeString(12, 'fmt '); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data'); view.setUint32(40, pcmData.length, true);
+  new Uint8Array(buffer, 44).set(pcmData);
+
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+};
+
 const speakBriefing = async (text: string) => {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
   try {
@@ -78,21 +101,66 @@ const speakBriefing = async (text: string) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `Say in a sharp, professional military tone: ${text}` }] }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
-        },
+        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } },
         model: "gemini-2.5-flash-preview-tts"
       })
     });
     const data = await response.json();
     const pcmData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (pcmData) {
-      const audioBlob = await fetch(`data:audio/l16;base64,${pcmData}`).then(r => r.blob());
-      const audioUrl = URL.createObjectURL(audioBlob);
+      const audioUrl = compileWav(pcmData);
       new Audio(audioUrl).play();
     }
   } catch (error) { console.error("TTS Error:", error); }
+};
+
+// ============================================================================
+// [COMPONENTS: DEEP WORK TIMER] - TÁCH RỜI ĐỂ CHỐNG RÒ RỈ RENDER
+// ============================================================================
+const DeepWorkTimer = () => {
+  const { setFatigueLevel } = useSentinel();
+  const [pomodoroTime, setPomodoroTime] = useState(25 * 60);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+
+  useEffect(() => {
+    let interval: any;
+    if (isTimerActive) {
+      interval = setInterval(() => {
+        setPomodoroTime(p => {
+          if (p <= 1) {
+            setIsTimerActive(false);
+            setFatigueLevel((f: number) => Math.min(f + 15, 100));
+            return 0;
+          }
+          return p - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerActive, setFatigueLevel]);
+
+  const formatTimer = (seconds: number) => { 
+    const m = Math.floor(seconds / 60); 
+    const s = seconds % 60; 
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; 
+  };
+
+  return (
+    <div className="bg-[#161412] rounded-[30px] border border-stone-800 p-6 flex flex-col justify-between items-center relative overflow-hidden shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] h-64">
+      <div className="z-10 w-full text-center">
+        <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.3em] text-orange-500 mb-1 block">Deep Work Protocol</span>
+        <span className="text-[8px] md:text-[9px] font-mono text-white/40 tracking-widest block">SPACED & INTERLEAVED</span>
+      </div>
+      <div className="z-10 text-6xl md:text-7xl font-black text-white tracking-tighter font-mono tabular-nums drop-shadow-2xl">{formatTimer(pomodoroTime)}</div>
+      <div className="z-10 flex gap-3 w-full justify-center">
+        <button onClick={() => setIsTimerActive(!isTimerActive)} className={cn("px-6 py-2.5 rounded-full text-[10px] md:text-[11px] font-bold tracking-widest uppercase shadow-xl transition-all flex items-center gap-2", isTimerActive ? "bg-white text-stone-900 hover:bg-stone-200" : "bg-orange-600 text-white hover:bg-orange-700")}>
+          {isTimerActive ? <><Pause size={14}/> Pause</> : <><Play size={14}/> Engage</>}
+        </button>
+        <button onClick={() => { setIsTimerActive(false); setPomodoroTime(25 * 60); }} className="w-10 h-10 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-white/10 text-white/50 hover:bg-white/20 hover:text-white transition-colors border border-white/5"><RotateCcw size={14} /></button>
+      </div>
+      <Clock size={120} className={cn("absolute right-[-20px] bottom-[-20px] pointer-events-none transition-all duration-1000", isTimerActive ? "text-orange-600 opacity-10 animate-[spin_10s_linear_infinite]" : "text-stone-800 opacity-20")} />
+    </div>
+  );
 };
 
 // ============================================================================
@@ -594,7 +662,6 @@ const LogicPruner = () => <ErrorBoundary moduleName="LOGIC_PRUNER"><LogicPrunerC
 // [CORE: App]
 // ============================================================================
 
-// [SURGICAL ADDITION] - Bypassing PhET's X-Frame-Options by curating the HTML5 raw URLs
 const PHET_SIMS = [
   { name: 'Mạch Điện (DC)', url: 'https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html' },
   { name: 'Động Học & Lực', url: 'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_all.html' },
@@ -605,7 +672,6 @@ const PHET_SIMS = [
   { name: 'Quang Học', url: 'https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_all.html' }
 ];
 
-// DATA: THE CAMPAIGN TRACKER (PATTERN EXTRACTED FROM PDFs)
 const CAMPAIGN_DATA = {
   'HSGTP': {
     title: 'HSGTP Đà Nẵng (24/03)',
@@ -616,8 +682,8 @@ const CAMPAIGN_DATA = {
       { t: 'Essay Architecture', d: '150 words: Coherence, Cohesion, Stress Reduction' }
     ],
     links: [
-      { n: 'Ludwig.guru (Context/Idiom)', u: 'https://ludwig.guru/', t: 'GLOBAL' },
-      { n: 'OZDIC (Collocations)', u: 'https://ozdic.com/', t: 'GLOBAL' },
+      { n: 'Ludwig.guru (Context)', u: 'https://ludwig.guru/', t: 'GLOBAL' },
+      { n: 'OZDIC', u: 'https://ozdic.com/', t: 'GLOBAL' },
       { n: 'Cambridge Dict', u: 'https://dictionary.cambridge.org/', t: 'GLOBAL' }
     ]
   },
@@ -631,9 +697,9 @@ const CAMPAIGN_DATA = {
       { t: 'Writing Task 2', d: 'Rigorous Logical Architecture' }
     ],
     links: [
-      { n: 'IELTS Liz (Core Logic)', u: 'https://ieltsliz.com/', t: 'GLOBAL' },
-      { n: 'Mini-IELTS (Drill)', u: 'https://mini-ielts.com/', t: 'LOCAL' },
-      { n: 'TED (Active Listening)', u: 'https://www.ted.com/', t: 'GLOBAL' }
+      { n: 'IELTS Liz', u: 'https://ieltsliz.com/', t: 'GLOBAL' },
+      { n: 'Mini-IELTS', u: 'https://mini-ielts.com/', t: 'LOCAL' },
+      { n: 'TED', u: 'https://www.ted.com/', t: 'GLOBAL' }
     ]
   },
   'DGNL': {
@@ -646,7 +712,7 @@ const CAMPAIGN_DATA = {
       { t: 'Tiếng Việt', d: 'Đọc hiểu văn bản đa phương thức' }
     ],
     links: [
-      { n: 'Brilliant.org (Logic/STEM)', u: 'https://brilliant.org/', t: 'GLOBAL' },
+      { n: 'Brilliant.org', u: 'https://brilliant.org/', t: 'GLOBAL' },
       { n: 'VNUHCM Info', u: 'https://thinangluc.vnuhcm.edu.vn/', t: 'LOCAL' }
     ]
   },
@@ -660,9 +726,9 @@ const CAMPAIGN_DATA = {
       { t: 'Toán Học', d: 'Khối đa diện, Vector không gian, Tổ hợp xác suất' }
     ],
     links: [
-      { n: 'HyperPhysics (Concept Maps)', u: 'http://hyperphysics.phy-astr.gsu.edu/', t: 'GLOBAL' },
+      { n: 'HyperPhysics', u: 'http://hyperphysics.phy-astr.gsu.edu/', t: 'GLOBAL' },
       { n: 'Paul\'s Math Notes', u: 'https://tutorial.math.lamar.edu/', t: 'GLOBAL' },
-      { n: 'Toán Math (Luyện đề)', u: 'https://toanmath.com/', t: 'LOCAL' },
+      { n: 'Toán Math', u: 'https://toanmath.com/', t: 'LOCAL' },
       { n: 'Thư Viện Vật Lý', u: 'https://thuvienvatly.com/', t: 'LOCAL' }
     ]
   }
@@ -675,10 +741,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const [notes, setNotes] = useState([{ id: '1', content: "Establish Vertical Impact metrics. No horizontal hoarding.", timestamp: Date.now() - 3600000 }]);
-  const [pomodoroTime, setPomodoroTime] = useState(25 * 60);
-  const [isTimerActive, setIsTimerActive] = useState(false);
   
-  // [SURGICAL ADDITION] - Khôi phục state tasks bị mất để ngăn chặn Meltdown ở module Bayesian
   const [tasks, setTasks] = useState<any[]>([]);
   const [architectLoading, setArchitectLoading] = useState(false);
 
@@ -691,28 +754,28 @@ export default function App() {
     } catch (e) { console.error(e); } finally { setArchitectLoading(false); }
   };
 
-  // Hub States
   const [isEmbedExpanded, setIsEmbedExpanded] = useState(true);
   const [activeIframe, setActiveIframe] = useState('https://www.desmos.com/calculator');
   const [activeCampaign, setActiveCampaign] = useState<keyof typeof CAMPAIGN_DATA>('THPTQG');
 
-  useEffect(() => {
-    let interval: any;
-    if (isTimerActive && pomodoroTime > 0) { interval = setInterval(() => setPomodoroTime(p => p - 1), 1000); } 
-    else if (pomodoroTime === 0) { setIsTimerActive(false); setFatigueLevel(p => Math.min(p + 15, 100)); }
-    return () => clearInterval(interval);
-  }, [isTimerActive, pomodoroTime]);
-
-  const formatTimer = (seconds: number) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; };
   const addNote = (content: string) => { setNotes(prev => [{ id: crypto.randomUUID(), content, timestamp: Date.now() }, ...prev]); };
   const deleteNote = (id: string) => { setNotes(prev => prev.filter(n => n.id !== id)); };
 
   const currentCamp = CAMPAIGN_DATA[activeCampaign];
 
+  // [NUCLEAR FORCE] Khóa Context bằng useMemo. Chặn đứng mọi đợt re-render rác.
+  const contextValue = useMemo(() => ({
+    fatigueLevel, setFatigueLevel, 
+    activeMode, setActiveMode, 
+    isProcessing, setIsProcessing, 
+    notes, addNote, deleteNote, 
+    isLocked, setIsLocked, 
+    tasks, setTasks, architectTasks, architectLoading
+  }), [fatigueLevel, activeMode, isProcessing, notes, isLocked, tasks, architectLoading]);
+
   return (
     <ErrorBoundary moduleName="ROOT_SYSTEM">
-      {/* Cập nhật Provider: Chèn lại tasks và architect để hệ thống vận hành trơn tru */}
-      <SentinelContext.Provider value={{ fatigueLevel, activeMode, setActiveMode, isProcessing, setIsProcessing, notes, addNote, deleteNote, isLocked, setIsLocked, tasks, setTasks, architectTasks, architectLoading }}>
+      <SentinelContext.Provider value={contextValue}>
         <LayoutGroup>
           <AnimatePresence mode="wait">
             {isLocked ? (
@@ -786,21 +849,9 @@ export default function App() {
                                       </div>
                                     </div>
 
-                                    {/* Deep Work Timer */}
-                                    <div className="bg-[#161412] rounded-[30px] border border-stone-800 p-6 flex flex-col justify-between items-center relative overflow-hidden shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] h-64">
-                                      <div className="z-10 w-full text-center">
-                                        <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.3em] text-orange-500 mb-1 block">Deep Work Protocol</span>
-                                        <span className="text-[8px] md:text-[9px] font-mono text-white/40 tracking-widest block">SPACED & INTERLEAVED</span>
-                                      </div>
-                                      <div className="z-10 text-6xl md:text-7xl font-black text-white tracking-tighter font-mono tabular-nums drop-shadow-2xl">{formatTimer(pomodoroTime)}</div>
-                                      <div className="z-10 flex gap-3 w-full justify-center">
-                                        <button onClick={() => setIsTimerActive(!isTimerActive)} className={cn("px-6 py-2.5 rounded-full text-[10px] md:text-[11px] font-bold tracking-widest uppercase shadow-xl transition-all flex items-center gap-2", isTimerActive ? "bg-white text-stone-900 hover:bg-stone-200" : "bg-orange-600 text-white hover:bg-orange-700")}>
-                                          {isTimerActive ? <><Pause size={14}/> Pause</> : <><Play size={14}/> Engage</>}
-                                        </button>
-                                        <button onClick={() => { setIsTimerActive(false); setPomodoroTime(25 * 60); }} className="w-10 h-10 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-white/10 text-white/50 hover:bg-white/20 hover:text-white transition-colors border border-white/5"><RotateCcw size={14} /></button>
-                                      </div>
-                                      <Clock size={120} className={cn("absolute right-[-20px] bottom-[-20px] pointer-events-none transition-all duration-1000", isTimerActive ? "text-orange-600 opacity-10 animate-[spin_10s_linear_infinite]" : "text-stone-800 opacity-20")} />
-                                    </div>
+                                    {/* DECOUPLED TIMER: Đồng hồ sẽ chạy độc lập, không ép cả cái App re-render */}
+                                    <DeepWorkTimer />
+                                    
                                   </div>
 
                                   {/* EMBED MATRIX (NOTION-LIKE IFRAME) - UPGRADED */}
@@ -894,10 +945,15 @@ export default function App() {
 
                                     <div className="h-px w-full bg-stone-800 my-4"></div>
 
-                                    {/* EPISTEMOLOGICAL TRACE */}
-                                    <h4 className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest mb-3 text-stone-400 flex items-center gap-2">
-                                      <HardDrive size={12}/> Epistemological Trace
-                                    </h4>
+                                    {/* EPISTEMOLOGICAL TRACE & ORPHAN FIX */}
+                                    <div className="flex justify-between items-center mb-3">
+                                      <h4 className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-stone-400 flex items-center gap-2">
+                                        <HardDrive size={12}/> Epistemological Trace
+                                      </h4>
+                                      <button onClick={architectTasks} disabled={architectLoading} className="text-[9px] uppercase tracking-widest font-bold text-orange-500 hover:text-white transition-colors flex items-center gap-1 bg-white/5 px-2 py-1 rounded-md border border-white/10 hover:bg-orange-600">
+                                        {architectLoading ? <Loader2 size={10} className="animate-spin"/> : <ListTodo size={10}/>} Extract Tasks
+                                      </button>
+                                    </div>
                                     
                                     <form onSubmit={(e) => {
                                       e.preventDefault();

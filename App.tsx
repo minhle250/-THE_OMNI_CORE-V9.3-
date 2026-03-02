@@ -11,11 +11,14 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // ============================================================================
-// [CORE: UTILS & SECURITY]
+// [FOLDER: /core/utils]
 // ============================================================================
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// ============================================================================
+// [FOLDER: /core/security] - QUARANTINE SHIELDS
+// ============================================================================
 interface ErrorBoundaryProps { children: ReactNode; moduleName: string; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -34,7 +37,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 // ============================================================================
-// [CORE: CONTEXT & TOKENS] 
+// [FOLDER: /core/context] 
 // ============================================================================
 const SentinelContext = createContext<any>(undefined);
 const useSentinel = () => useContext(SentinelContext);
@@ -42,12 +45,13 @@ const useSentinel = () => useContext(SentinelContext);
 const TOKENS = {
   bgObsidian: "bg-[#161412]",
   textHermesOrange: "#D95319",
-  borderSaddle: "border-2 border-dashed border-[#C5A059]/30"
+  borderSaddle: "border-2 border-dashed border-[#C5A059]/30",
 };
 
 // ============================================================================
-// [CORE: API & WAV COMPILER] - IMMUTABLE FORCE
+// [FOLDER: /core/api] - GEMINI SENSOR & WAV COMPILER
 // ============================================================================
+// [NUCLEAR FIX]: Tránh lỗi import.meta bằng cách check an toàn hoặc gán giá trị rỗng nếu không có key
 const apiKey = ""; 
 
 const invokeGemini = async (prompt: string, systemInstruction: string): Promise<string> => {
@@ -67,21 +71,18 @@ const invokeGemini = async (prompt: string, systemInstruction: string): Promise<
   throw lastError;
 };
 
-// Lệnh Force: Trình biên dịch WAV hạt nhân. Không có cái này, trình duyệt câm lặng.
+// Trình biên dịch WAV hạt nhân để phát âm thanh PCM 16-bit từ Gemini
 const compileWav = (base64Pcm: string, sampleRate = 24000) => {
   const binaryString = atob(base64Pcm);
   const pcmData = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) pcmData[i] = binaryString.charCodeAt(i);
-
   const numChannels = 1;
   const bitsPerSample = 16;
   const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
   const blockAlign = numChannels * (bitsPerSample / 8);
   const buffer = new ArrayBuffer(44 + pcmData.length);
   const view = new DataView(buffer);
-
   const writeString = (offset: number, string: string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
-
   writeString(0, 'RIFF'); view.setUint32(4, 36 + pcmData.length, true);
   writeString(8, 'WAVE'); writeString(12, 'fmt '); view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
@@ -89,7 +90,6 @@ const compileWav = (base64Pcm: string, sampleRate = 24000) => {
   view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true);
   writeString(36, 'data'); view.setUint32(40, pcmData.length, true);
   new Uint8Array(buffer, 44).set(pcmData);
-
   return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
 };
 
@@ -101,7 +101,10 @@ const speakBriefing = async (text: string) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `Say in a sharp, professional military tone: ${text}` }] }],
-        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } },
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+        },
         model: "gemini-2.5-flash-preview-tts"
       })
     });
@@ -115,7 +118,7 @@ const speakBriefing = async (text: string) => {
 };
 
 // ============================================================================
-// [COMPONENTS: DEEP WORK TIMER] - TÁCH RỜI ĐỂ CHỐNG RÒ RỈ RENDER
+// [COMPONENTS: DEEP WORK TIMER] - ISOLATED RENDER UNIT
 // ============================================================================
 const DeepWorkTimer = () => {
   const { setFatigueLevel } = useSentinel();
@@ -236,7 +239,7 @@ const DynamicIslandCore = () => {
                 <div className="h-px w-12 bg-white/10"></div>
                 <div className="flex flex-col gap-3 min-h-[50px]">
                   <button onClick={(e) => { e.stopPropagation(); getTacticalInsight(); }} className="flex items-center gap-2 w-fit group">
-                    <Sparkles size={14} className="text-orange-400 group-hover:rotate-12 transition-transform" />
+                    <motion.div animate={loading ? { rotate: 360 } : {}} transition={{ repeat: Infinity, duration: 1 }}><Sparkles size={14} className="text-orange-400" /></motion.div>
                     <span className="text-[9px] font-bold text-orange-400/60 uppercase tracking-[0.3em]">AI Synthesis</span>
                   </button>
                   <p className="text-[12px] md:text-[13px] text-white/70 leading-relaxed font-medium line-clamp-3">
@@ -659,9 +662,8 @@ const LogicPrunerCore = () => {
 const LogicPruner = () => <ErrorBoundary moduleName="LOGIC_PRUNER"><LogicPrunerCore /></ErrorBoundary>;
 
 // ============================================================================
-// [CORE: App]
+// [CORE: App - Master Dispatcher]
 // ============================================================================
-
 const PHET_SIMS = [
   { name: 'Mạch Điện (DC)', url: 'https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html' },
   { name: 'Động Học & Lực', url: 'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_all.html' },
@@ -674,63 +676,24 @@ const PHET_SIMS = [
 
 const CAMPAIGN_DATA = {
   'HSGTP': {
-    title: 'HSGTP Đà Nẵng (24/03)',
-    focus: 'Advanced Lexicon & Grammar Hegemony',
-    patterns: [
-      { t: 'Inversions & Cleft', d: 'Not until..., Sooner..., What... is...' },
-      { t: 'Idiomatic Hegemony', d: 'leave to your own devices, strike as odd, make ends meet' },
-      { t: 'Essay Architecture', d: '150 words: Coherence, Cohesion, Stress Reduction' }
-    ],
-    links: [
-      { n: 'Ludwig.guru (Context)', u: 'https://ludwig.guru/', t: 'GLOBAL' },
-      { n: 'OZDIC', u: 'https://ozdic.com/', t: 'GLOBAL' },
-      { n: 'Cambridge Dict', u: 'https://dictionary.cambridge.org/', t: 'GLOBAL' }
-    ]
+    title: 'HSGTP Đà Nẵng (24/03)', focus: 'Advanced Lexicon & Grammar Hegemony',
+    patterns: [{ t: 'Inversions & Cleft', d: 'Not until..., Sooner..., What... is...' }, { t: 'Idiomatic Hegemony', d: 'leave to your own devices, strike as odd, make ends meet' }, { t: 'Essay Architecture', d: '150 words: Coherence, Cohesion, Stress Reduction' }],
+    links: [{ n: 'Ludwig.guru (Context)', u: 'https://ludwig.guru/', t: 'GLOBAL' }, { n: 'OZDIC', u: 'https://ozdic.com/', t: 'GLOBAL' }, { n: 'Cambridge Dict', u: 'https://dictionary.cambridge.org/', t: 'GLOBAL' }]
   },
   'IELTS': {
-    title: 'IELTS Inversion (Cuối T3)',
-    focus: '4-Skill Rigorous Optimization',
-    patterns: [
-      { t: 'Reading', d: 'True/False/Not Given Trap Avoidance' },
-      { t: 'Listening', d: 'Map Labeling & Distractor Filtering' },
-      { t: 'Writing Task 1', d: 'Data Topology & Trend Lexicon' },
-      { t: 'Writing Task 2', d: 'Rigorous Logical Architecture' }
-    ],
-    links: [
-      { n: 'IELTS Liz', u: 'https://ieltsliz.com/', t: 'GLOBAL' },
-      { n: 'Mini-IELTS', u: 'https://mini-ielts.com/', t: 'LOCAL' },
-      { n: 'TED', u: 'https://www.ted.com/', t: 'GLOBAL' }
-    ]
+    title: 'IELTS Inversion (Cuối T3)', focus: '4-Skill Rigorous Optimization',
+    patterns: [{ t: 'Reading', d: 'True/False/Not Given Trap Avoidance' }, { t: 'Listening', d: 'Map Labeling & Distractor Filtering' }, { t: 'Writing Task 1', d: 'Data Topology & Trend Lexicon' }, { t: 'Writing Task 2', d: 'Rigorous Logical Architecture' }],
+    links: [{ n: 'IELTS Liz', u: 'https://ieltsliz.com/', t: 'GLOBAL' }, { n: 'Mini-IELTS', u: 'https://mini-ielts.com/', t: 'LOCAL' }, { n: 'TED', u: 'https://www.ted.com/', t: 'GLOBAL' }]
   },
   'DGNL': {
-    title: 'ĐGNL HCM (T4 & T6)',
-    focus: 'Cross-disciplinary Analytics',
-    patterns: [
-      { t: 'Logic & Phân tích', d: 'Logic mệnh đề, Biểu đồ dữ liệu (Data Analysis)' },
-      { t: 'Kinh tế & Xã hội', d: 'Kinh tế thị trường định hướng XHCN, GDP vs HDI' },
-      { t: 'Khoa học (Tự nhiên)', d: 'Suy luận thực nghiệm Lý-Hóa-Sinh' },
-      { t: 'Tiếng Việt', d: 'Đọc hiểu văn bản đa phương thức' }
-    ],
-    links: [
-      { n: 'Brilliant.org', u: 'https://brilliant.org/', t: 'GLOBAL' },
-      { n: 'VNUHCM Info', u: 'https://thinangluc.vnuhcm.edu.vn/', t: 'LOCAL' }
-    ]
+    title: 'ĐGNL HCM (T4 & T6)', focus: 'Cross-disciplinary Analytics',
+    patterns: [{ t: 'Logic & Phân tích', d: 'Logic mệnh đề, Biểu đồ dữ liệu (Data Analysis)' }, { t: 'Kinh tế & Xã hội', d: 'Kinh tế thị trường định hướng XHCN, GDP vs HDI' }, { t: 'Khoa học (Tự nhiên)', d: 'Suy luận thực nghiệm Lý-Hóa-Sinh' }, { t: 'Tiếng Việt', d: 'Đọc hiểu văn bản đa phương thức' }],
+    links: [{ n: 'Brilliant.org', u: 'https://brilliant.org/', t: 'GLOBAL' }, { n: 'VNUHCM Info', u: 'https://thinangluc.vnuhcm.edu.vn/', t: 'LOCAL' }]
   },
   'THPTQG': {
-    title: 'THPTQG A01 (Cuối T6)',
-    focus: 'STEM Hegemony',
-    patterns: [
-      { t: 'Vật Lý: Nhiệt Động', d: 'Khí lí tưởng, Áp suất, Sự nóng chảy (Đề 2025)' },
-      { t: 'Vật Lý: Hạt nhân', d: 'Phóng xạ Ra-226, Chu kì bán rã, Độ phóng xạ' },
-      { t: 'Vật Lý: Điện mạch', d: 'Định luật Ôm, Mạch RLC (Sử dụng PhET)' },
-      { t: 'Toán Học', d: 'Khối đa diện, Vector không gian, Tổ hợp xác suất' }
-    ],
-    links: [
-      { n: 'HyperPhysics', u: 'http://hyperphysics.phy-astr.gsu.edu/', t: 'GLOBAL' },
-      { n: 'Paul\'s Math Notes', u: 'https://tutorial.math.lamar.edu/', t: 'GLOBAL' },
-      { n: 'Toán Math', u: 'https://toanmath.com/', t: 'LOCAL' },
-      { n: 'Thư Viện Vật Lý', u: 'https://thuvienvatly.com/', t: 'LOCAL' }
-    ]
+    title: 'THPTQG A01 (Cuối T6)', focus: 'STEM Hegemony',
+    patterns: [{ t: 'Vật Lý: Nhiệt Động', d: 'Khí lí tưởng, Áp suất, Sự nóng chảy (Đề 2025)' }, { t: 'Vật Lý: Hạt nhân', d: 'Phóng xạ Ra-226, Chu kì bán rã, Độ phóng xạ' }, { t: 'Vật Lý: Điện mạch', d: 'Định luật Ôm, Mạch RLC (Sử dụng PhET)' }, { t: 'Toán Học', d: 'Khối đa diện, Vector không gian, Tổ hợp xác suất' }],
+    links: [{ n: 'HyperPhysics', u: 'http://hyperphysics.phy-astr.gsu.edu/', t: 'GLOBAL' }, { n: 'Paul\'s Math Notes', u: 'https://tutorial.math.lamar.edu/', t: 'GLOBAL' }, { n: 'Toán Math', u: 'https://toanmath.com/', t: 'LOCAL' }, { n: 'Thư Viện Vật Lý', u: 'https://thuvienvatly.com/', t: 'LOCAL' }]
   }
 };
 
@@ -738,10 +701,8 @@ export default function App() {
   const [isLocked, setIsLocked] = useState(true);
   const [activeMode, setActiveMode] = useState('HEGEMONY');
   const [fatigueLevel, setFatigueLevel] = useState(12);
-  const [isProcessing, setIsProcessing] = useState(false);
   
   const [notes, setNotes] = useState([{ id: '1', content: "Establish Vertical Impact metrics. No horizontal hoarding.", timestamp: Date.now() - 3600000 }]);
-  
   const [tasks, setTasks] = useState<any[]>([]);
   const [architectLoading, setArchitectLoading] = useState(false);
 
@@ -763,15 +724,13 @@ export default function App() {
 
   const currentCamp = CAMPAIGN_DATA[activeCampaign];
 
-  // [NUCLEAR FORCE] Khóa Context bằng useMemo. Chặn đứng mọi đợt re-render rác.
   const contextValue = useMemo(() => ({
     fatigueLevel, setFatigueLevel, 
     activeMode, setActiveMode, 
-    isProcessing, setIsProcessing, 
     notes, addNote, deleteNote, 
     isLocked, setIsLocked, 
     tasks, setTasks, architectTasks, architectLoading
-  }), [fatigueLevel, activeMode, isProcessing, notes, isLocked, tasks, architectLoading]);
+  }), [fatigueLevel, activeMode, notes, isLocked, tasks, architectLoading]);
 
   return (
     <ErrorBoundary moduleName="ROOT_SYSTEM">
@@ -783,7 +742,6 @@ export default function App() {
             ) : (
               <motion.div key="workspace" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={cn("w-full h-screen flex flex-col overflow-hidden selection:bg-orange-600/20", "bg-[#161412] relative")}>
                 <div className="absolute inset-0 z-0 opacity-10 pointer-events-none mix-blend-multiply" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)'/%3E%3C/svg%3E")` }}></div>
-                
                 <div 
                   className="absolute inset-0 z-0 bg-cover bg-center transition-all duration-1000" 
                   style={{ backgroundImage: `url('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80&w=2070')`, filter: activeMode === 'HOME' ? 'none' : 'blur(40px) brightness(0.35) saturate(1.2)', transform: activeMode === 'HOME' ? 'scale(1)' : 'scale(1.1)' }} 
@@ -812,10 +770,8 @@ export default function App() {
                               </div>
 
                               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 min-h-[700px]">
-                                {/* LÕI THỰC THI (LEFT: 8 COLUMNS) */}
                                 <div className="lg:col-span-8 flex flex-col gap-6 md:gap-8">
                                   
-                                  {/* TACTICAL CAMPAIGNS (UNIT TESTS) - INTERACTIVE */}
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
                                     {Object.entries(CAMPAIGN_DATA).map(([key, camp]) => {
                                       const isActive = activeCampaign === key;
@@ -831,9 +787,7 @@ export default function App() {
                                     })}
                                   </div>
 
-                                  {/* CAMPAIGN INTEL & DEEP WORK PROTOCOL (SPLIT ROW) */}
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 shrink-0">
-                                    {/* Campaign Intel */}
                                     <div className="bg-[#161412] rounded-[30px] border border-stone-800 p-6 flex flex-col shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] h-64">
                                       <div className="flex justify-between items-start mb-4">
                                         <h4 className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-orange-500 flex items-center gap-2"><Target size={14}/> Core Patterns Extracted</h4>
@@ -849,12 +803,10 @@ export default function App() {
                                       </div>
                                     </div>
 
-                                    {/* DECOUPLED TIMER: Đồng hồ sẽ chạy độc lập, không ép cả cái App re-render */}
                                     <DeepWorkTimer />
                                     
                                   </div>
 
-                                  {/* EMBED MATRIX (NOTION-LIKE IFRAME) - UPGRADED */}
                                   <motion.div layout className={cn("rounded-[30px] md:rounded-[40px] bg-white/95 backdrop-blur-2xl flex flex-col shadow-2xl overflow-hidden relative", TOKENS.borderSaddle, isEmbedExpanded ? "flex-1 min-h-[400px]" : "h-12 md:h-14 shrink-0")}>
                                     <div className="h-12 md:h-14 bg-[#161412] flex items-center px-4 md:px-6 shrink-0 border-b border-stone-800 gap-4 overflow-hidden">
                                       <button onClick={() => setIsEmbedExpanded(!isEmbedExpanded)} className="flex items-center gap-2 outline-none group shrink-0">
@@ -865,18 +817,13 @@ export default function App() {
                                       <AnimatePresence>
                                         {isEmbedExpanded && (
                                           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex gap-1.5 md:gap-2 overflow-x-auto custom-scrollbar pb-1 items-center">
-                                            {/* Native Embeds */}
                                             <button onClick={() => setActiveIframe('https://www.desmos.com/calculator')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('desmos') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>Desmos 2D</button>
                                             <button onClick={() => setActiveIframe('https://www.geogebra.org/3d?embed')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('geogebra') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>GeoGebra 3D</button>
-                                            
-                                            {/* Sửa lại link gọi thẳng vào Thí nghiệm đầu tiên của PhET thay vì Filter Page bị cấm */}
                                             <button onClick={() => setActiveIframe(PHET_SIMS[0].url)} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('phet.colorado.edu') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>PhET Hub</button>
-                                            
                                             <button onClick={() => setActiveIframe('https://open.spotify.com/embed/playlist/37i9dQZF1DWZeKCadgRdKQ?utm_source=generator&theme=0')} className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors whitespace-nowrap", activeIframe.includes('spotify') ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:bg-white/20')}>Spotify</button>
                                             
                                             <div className="w-px h-4 bg-stone-700 mx-1 shrink-0"></div>
                                             
-                                            {/* Pop-out Links (Bypassing X-Frame-Options) */}
                                             <a href="https://pomofocus.io/" target="_blank" rel="noopener noreferrer" className="text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors whitespace-nowrap flex items-center gap-1">Pomodoro <ExternalLink size={10}/></a>
                                             <a href="https://phet.colorado.edu/vi/simulations/filter?subjects=physics&type=html" target="_blank" rel="noopener noreferrer" className="text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors whitespace-nowrap flex items-center gap-1">PhET (Ext) <ExternalLink size={10}/></a>
                                             <a href="https://www.khanacademy.org/" target="_blank" rel="noopener noreferrer" className="text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors whitespace-nowrap flex items-center gap-1">Khan <ExternalLink size={10}/></a>
@@ -888,8 +835,6 @@ export default function App() {
                                     <AnimatePresence>
                                       {isEmbedExpanded && (
                                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: '100%' }} exit={{ opacity: 0, height: 0 }} className="flex-1 bg-[#FBF9F6] flex flex-col">
-                                          
-                                          {/* [SURGICAL ADDITION] - PhET Mini-Library Bar: Chỉ hiện khi m kích hoạt PhET Hub */}
                                           {activeIframe.includes('phet.colorado.edu') && (
                                             <div className="bg-[#161412] border-b border-stone-800 flex gap-2 overflow-x-auto px-4 py-2 custom-scrollbar shrink-0 items-center">
                                               <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-widest mr-2 shrink-0 flex items-center gap-1"><Target size={12}/> PhET Library</span>
@@ -898,7 +843,6 @@ export default function App() {
                                               ))}
                                             </div>
                                           )}
-
                                           <iframe src={activeIframe} className="w-full h-full border-none flex-1" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
                                         </motion.div>
                                       )}
@@ -907,12 +851,9 @@ export default function App() {
 
                                 </div>
 
-                                {/* LÕI CHIẾN LƯỢC (RIGHT: 4 COLUMNS) */}
                                 <div className="lg:col-span-4 flex flex-col gap-6 md:gap-8">
-                                  {/* THE GEMINI NEXUS & DATA COLLECTION */}
                                   <div className="bg-[#161412] rounded-[30px] md:rounded-[40px] p-6 flex-1 flex flex-col shadow-2xl border border-stone-800 relative overflow-hidden min-h-[450px]">
                                     
-                                    {/* GEMINI NEURAL LINK HEADER */}
                                     <div className="mb-6 p-5 rounded-3xl border border-orange-500/30 bg-orange-500/5 relative overflow-hidden group">
                                       <div className="absolute top-0 right-0 w-32 h-32 bg-orange-600/10 blur-[40px] rounded-full pointer-events-none group-hover:bg-orange-600/20 transition-all duration-700"></div>
                                       <div className="flex justify-between items-start mb-3 relative z-10">
@@ -945,7 +886,6 @@ export default function App() {
 
                                     <div className="h-px w-full bg-stone-800 my-4"></div>
 
-                                    {/* EPISTEMOLOGICAL TRACE & ORPHAN FIX */}
                                     <div className="flex justify-between items-center mb-3">
                                       <h4 className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-stone-400 flex items-center gap-2">
                                         <HardDrive size={12}/> Epistemological Trace
@@ -991,9 +931,15 @@ export default function App() {
             )}
           </AnimatePresence>
           <style dangerouslySetInnerHTML={{ __html: `
-            @import url('https://fonts.googleapis.com/css2?family=Product+Sans:wght@400;700&display=swap');
+            /* [FORCE TYPOGRAPHY]: Ép nạp hệ font Google chuẩn xác từ CDN ổn định nhất */
             @import url('https://fonts.cdnfonts.com/css/google-sans');
-            *, body, input, textarea, button, span, h1, h2, h3, h4 { font-family: 'Product Sans', 'Google Sans', sans-serif !important; }
+            @import url('https://fonts.cdnfonts.com/css/product-sans');
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+            *, body, input, textarea, button, span, h1, h2, h3, h4 { 
+              font-family: 'Google Sans', 'Product Sans', 'Inter', sans-serif !important; 
+            }
+
             .custom-scrollbar::-webkit-scrollbar { width: 3px; height: 3px; }
             .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
             .custom-scrollbar::-webkit-scrollbar-thumb { background: #A67C52; border-radius: 10px; }
